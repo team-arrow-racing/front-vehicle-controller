@@ -12,11 +12,6 @@ embedded-hal = "0.2.7"
 fdcan = { version = "0.2.0", features = ["fdcan_g0_g4_l5"] }
 panic-probe = { version = "0.3.1", features = ["print-defmt"] }
 rtic = { version = "2.1.1", features = ["thumbv7-backend"] }
-stm32g4xx-hal = { version = "0.0.2", features = [
-    "stm32g431",
-    "rt",
-    "defmt",
-] }
 rtic-monotonics = { version = "1.4.1", features = [
     "cortex-m-systick",
     "systick-64bit",
@@ -25,6 +20,14 @@ rtic-monotonics = { version = "1.4.1", features = [
 crc = "3.0"
 zerocopy = "0.6"
 byteorder = { version = "1.4", default-features = false }
+
+[dependencies.stm32g4xx-hal]
+path = "../stm32g4xx-hal" # for local development
+features = [
+    "stm32g431",
+    "rt",
+    "defmt",
+]
 
 [[bin]]
 name = "front-vehicle-controller"

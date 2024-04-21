@@ -1,6 +1,5 @@
 #![no_main]
 #![no_std]
-#![feature(type_alias_impl_trait)]
 #![allow(clippy::transmute_ptr_to_ptr)]
 
 // global logger
@@ -12,15 +11,21 @@ use hal::{
 	gpio::{Output, Speed},
 	independent_watchdog::IndependentWatchdog,
 	pwr::PwrExt,
-	rcc::{self, Config, RccExt, SysClockSrc}
+	rcc::{self, Config, RccExt, SysClockSrc},
+	stm32::Peripherals,
+	time::{ExtU32, RateExtU32}
 };
 
 use rtic_monotonics::{
-    systick::{ExtU64, Systick},
+    systick::*,
     Monotonic,
 };
 
-#[rtic::app(device = stm32g4xx_hal::pac, dispatchers = [UART1, UART2])]
+use core::num::{NonZeroU16, NonZeroU8};
+
+use cortex_m_rt::entry;
+
+#[rtic::app(device = stm32g4xx_hal::stm32g4::stm32g431, dispatchers = [USART1, USART2])]
 mod app {
 	use super::*;
 	
@@ -28,7 +33,9 @@ mod app {
 	pub struct Shared{}
 	
 	#[local]
-	pub struct Local{}
+	pub struct Local {
+		pub watchdog: IndependentWatchdog,
+	}
 	
 	#[init]
 	fn init(cx: init::Context) -> (Shared, Local) {
@@ -56,7 +63,7 @@ mod app {
 		// Monotonics
 		Systick::start(
 			cx.core.SYST,
-			ccdr.clocks.sysclk().to_Hz(),
+			24_000_000,
 			rtic_monotonics::create_systick_token!(),
 		);
 
@@ -66,10 +73,18 @@ mod app {
 
 		(
 			Shared {},
-			Local {},
+			Local {watchdog},
 		)		
 	}	
-}
+
+	#[task(local = [watchdog])]
+	async fn watchdog(cx: watchdog::Context) {
+		loop {
+			cx.local.watchdog.feed();
+			Systick::delay(80_u64.millis()).await;
+		}
+	}
+ }
 
 // same panicking *behavior* as `panic-probe` but doesn't print a panic message
 // this prevents the panic message being printed *twice* when `defmt::panic` is invoked

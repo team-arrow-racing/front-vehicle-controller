@@ -2,11 +2,11 @@
 #![no_std]
 #![allow(clippy::transmute_ptr_to_ptr)]
 
-mod init;
 mod canbus;
+mod init;
 
-use init::*;
 use canbus::*;
+use init::*;
 
 // global logger
 use defmt_rtt as _;
@@ -15,49 +15,48 @@ use stm32g4xx_hal as hal;
 
 use fdcan::{frame::RxFrameInfo, FdCanControl, Fifo0, Fifo1, NormalOperationMode, Rx, Tx};
 use hal::{
-	can::{Can},
-	gpio::{Output, Speed},
-	independent_watchdog::IndependentWatchdog,
-	pwr::PwrExt,
-	rcc::{self, Config, RccExt, SysClockSrc},
-	stm32::{self, Peripherals, interrupt, Interrupt},
-	time::{ExtU32, RateExtU32}
+    can::Can,
+    gpio::{
+        gpiob::{PB0, PB14, PB7},
+        Output,
+		PushPull
+    },
+    independent_watchdog::IndependentWatchdog,
+    stm32,
 };
 
-use rtic_monotonics::{
-    systick::*,
-    Monotonic,
-};
-
-use core::num::{NonZeroU16, NonZeroU8};
-
-use cortex_m_rt::entry;
+use rtic_monotonics::{systick::*, Monotonic};
 
 #[rtic::app(device = stm32g4xx_hal::stm32g4::stm32g431, dispatchers = [USART1, USART2])]
 mod app {
-	use super::*;
-	type FdCanMode = NormalOperationMode;
+    use super::*;
+    type FdCanMode = NormalOperationMode;
 
-	#[shared]
-	pub struct Shared {
-		pub fdcan1_rx0: Rx<Can<stm32::FDCAN1>, FdCanMode, Fifo0>,
-		pub fdcan1_rx1: Rx<Can<stm32::FDCAN1>, FdCanMode, Fifo1>
-	}
-	
-	#[local]
-	pub struct Local {
-		pub watchdog: IndependentWatchdog,
-	}	
+    #[shared]
+    pub struct Shared {
+        pub fdcan1_ctrl: FdCanControl<Can<stm32::FDCAN1>, FdCanMode>,
+        pub fdcan1_tx: Tx<Can<stm32::FDCAN1>, FdCanMode>,
+        pub fdcan1_rx0: Rx<Can<stm32::FDCAN1>, FdCanMode, Fifo0>,
+        pub fdcan1_rx1: Rx<Can<stm32::FDCAN1>, FdCanMode, Fifo1>,
+    }
 
-	#[task(local = [watchdog])]
-	async fn watchdog(cx: watchdog::Context) {
-		loop {
-			cx.local.watchdog.feed();
-			Systick::delay(80_u64.millis()).await;
-		}
-	}
+    #[local]
+    pub struct Local {
+        pub watchdog: IndependentWatchdog,
+        pub led_ok: PB0<Output<PushPull>>,
+        pub led_warn: PB7<Output<PushPull>>,
+        pub led_error: PB14<Output<PushPull>>,
+    }
 
-	extern "Rust" {
+    #[task(local = [watchdog])]
+    async fn watchdog(cx: watchdog::Context) {
+        loop {
+            cx.local.watchdog.feed();
+            Systick::delay(80_u64.millis()).await;
+        }
+    }
+
+    extern "Rust" {
         #[init]
         fn init(mut cx: init::Context) -> (Shared, Local);
 
@@ -70,7 +69,7 @@ mod app {
         #[task(priority = 1)]
         async fn can_receive(mut cx: can_receive::Context, frame: RxFrameInfo, buffer: [u8; 8]);
     }
- }
+}
 
 // same panicking *behavior* as `panic-probe` but doesn't print a panic message
 // this prevents the panic message being printed *twice* when `defmt::panic` is invoked

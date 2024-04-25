@@ -48,7 +48,14 @@ pub fn init(cx: init::Context) -> (Shared, Local) {
     let rcc = cx.device.RCC.constrain();
     let mut rcc = rcc.freeze(Config::new(SysClockSrc::HSE(24.MHz())), pwr);
 
+    // GPIO
     let gpiob = cx.device.GPIOB.split(&mut rcc);
+    let gpiod = cx.device.GPIOD.split(&mut rcc);
+
+    // Status LEDs
+    let led_ok = gpiob.pb0.into_push_pull_output();
+    let led_warn = gpiob.pb7.into_push_pull_output();
+    let led_error = gpiob.pb14.into_push_pull_output();
 
     let btr = NominalBitTiming {
         prescaler: NonZeroU16::new(12).unwrap(),
@@ -74,6 +81,8 @@ pub fn init(cx: init::Context) -> (Shared, Local) {
         can.into_normal().split()
     };
 
+    
+
     // Monotonics
     Systick::start(
         cx.core.SYST,
@@ -87,9 +96,16 @@ pub fn init(cx: init::Context) -> (Shared, Local) {
 
     (
         Shared {
+            fdcan1_ctrl,
+            fdcan1_tx,
             fdcan1_rx0,
             fdcan1_rx1
         },
-        Local {watchdog},
+        Local {
+            watchdog,
+            led_ok,
+            led_warn,
+            led_error
+        },
     )		
 }	

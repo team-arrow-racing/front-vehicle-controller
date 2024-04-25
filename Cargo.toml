@@ -22,7 +22,7 @@ zerocopy = "0.6"
 byteorder = { version = "1.4", default-features = false }
 
 [dependencies.stm32g4xx-hal]
-path = "../stm32g4xx-hal" # for local development
+git = "https://github.com/stm32-rs/stm32g4xx-hal"
 features = [
     "stm32g431",
     "rt",

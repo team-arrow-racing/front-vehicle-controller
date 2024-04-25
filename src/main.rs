@@ -2,17 +2,25 @@
 #![no_std]
 #![allow(clippy::transmute_ptr_to_ptr)]
 
+mod init;
+mod canbus;
+
+use init::*;
+use canbus::*;
+
 // global logger
 use defmt_rtt as _;
 use panic_probe as _;
 use stm32g4xx_hal as hal;
 
+use fdcan::{frame::RxFrameInfo, FdCanControl, Fifo0, Fifo1, NormalOperationMode, Rx, Tx};
 use hal::{
+	can::{Can},
 	gpio::{Output, Speed},
 	independent_watchdog::IndependentWatchdog,
 	pwr::PwrExt,
 	rcc::{self, Config, RccExt, SysClockSrc},
-	stm32::Peripherals,
+	stm32::{self, Peripherals, interrupt, Interrupt},
 	time::{ExtU32, RateExtU32}
 };
 
@@ -28,53 +36,17 @@ use cortex_m_rt::entry;
 #[rtic::app(device = stm32g4xx_hal::stm32g4::stm32g431, dispatchers = [USART1, USART2])]
 mod app {
 	use super::*;
-	
+	type FdCanMode = NormalOperationMode;
+
 	#[shared]
-	pub struct Shared{}
+	pub struct Shared {
+		pub fdcan1_rx0: Rx<Can<stm32::FDCAN1>, FdCanMode, Fifo0>,
+		pub fdcan1_rx1: Rx<Can<stm32::FDCAN1>, FdCanMode, Fifo1>
+	}
 	
 	#[local]
 	pub struct Local {
 		pub watchdog: IndependentWatchdog,
-	}
-	
-	#[init]
-	fn init(cx: init::Context) -> (Shared, Local) {
-		defmt::info!("init");
-
-		// Setup and start independent watchdog.
-		// Initialisation must complete before the watchdog triggers
-		let watchdog = {
-			let mut wd = IndependentWatchdog::new(cx.device.IWDG);
-			wd.start(100_u32.millis());
-			wd
-		};
-
-		// configure power domain
-		let pwr = cx
-			.device
-			.PWR
-			.constrain()
-			.freeze();
-
-		// RCC
-		let rcc = cx.device.RCC.constrain();
-		let ccdr = rcc.freeze(Config::new(SysClockSrc::HSE(24.MHz())), pwr);
-
-		// Monotonics
-		Systick::start(
-			cx.core.SYST,
-			24_000_000,
-			rtic_monotonics::create_systick_token!(),
-		);
-
-		watchdog::spawn().ok();
-
-		defmt::info!("Initialisation finished.");
-
-		(
-			Shared {},
-			Local {watchdog},
-		)		
 	}	
 
 	#[task(local = [watchdog])]
@@ -84,6 +56,20 @@ mod app {
 			Systick::delay(80_u64.millis()).await;
 		}
 	}
+
+	extern "Rust" {
+        #[init]
+        fn init(mut cx: init::Context) -> (Shared, Local);
+
+        #[task(binds = FDCAN1_INTR0_IT, priority = 2, shared = [fdcan1_rx0])]
+        fn can_rx0_pending(mut cx: can_rx0_pending::Context);
+
+        #[task(binds = FDCAN1_INTR1_IT, priority = 2, shared = [fdcan1_rx1])]
+        fn can_rx1_pending(mut cx: can_rx1_pending::Context);
+
+        #[task(priority = 1)]
+        async fn can_receive(mut cx: can_receive::Context, frame: RxFrameInfo, buffer: [u8; 8]);
+    }
  }
 
 // same panicking *behavior* as `panic-probe` but doesn't print a panic message

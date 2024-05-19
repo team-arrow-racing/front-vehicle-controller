@@ -1,5 +1,6 @@
-use crate::app::{init, watchdog, Local, Shared};
+use crate::app::{init, watchdog, Local, Shared, Lights};
 
+use embedded_hal::digital::v2::OutputPin;
 use stm32g4xx_hal as hal;
 
 use hal::{
@@ -49,6 +50,7 @@ pub fn init(cx: init::Context) -> (Shared, Local) {
     let mut rcc = rcc.freeze(Config::new(SysClockSrc::HSE(24.MHz())), pwr);
 
     // GPIO
+    let gpioa = cx.device.GPIOA.split(&mut rcc);
     let gpiob = cx.device.GPIOB.split(&mut rcc);
     let gpiod = cx.device.GPIOD.split(&mut rcc);
 
@@ -81,7 +83,20 @@ pub fn init(cx: init::Context) -> (Shared, Local) {
         can.into_normal().split()
     };
 
-    
+    // Light outputs
+    let left_indicator_output = gpioa.pa4.into_push_pull_output();
+    let right_indicator_output = gpioa.pa5.into_push_pull_output();
+    let day_light_output = gpiob.pb3.into_push_pull_output();
+
+    // Light states
+    let light_states = Lights {
+        left_indicator: 0,
+        right_indicator: 0,
+        day_light: 0
+    };
+
+    // Horn
+    let horn = gpioa.pa15.into_push_pull_output();
 
     // Monotonics
     Systick::start(
@@ -99,13 +114,18 @@ pub fn init(cx: init::Context) -> (Shared, Local) {
             fdcan1_ctrl,
             fdcan1_tx,
             fdcan1_rx0,
-            fdcan1_rx1
+            fdcan1_rx1,
+            light_states,
+            horn
         },
         Local {
             watchdog,
             led_ok,
             led_warn,
-            led_error
+            led_error,
+            left_indicator_output,
+            right_indicator_output,
+            day_light_output
         },
     )		
 }	

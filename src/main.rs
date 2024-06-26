@@ -4,6 +4,11 @@
 
 mod canbus;
 mod init;
+mod lighting;
+mod horn;
+mod comms;
+mod device;
+
 
 use canbus::*;
 use init::*;

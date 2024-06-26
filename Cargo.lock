@@ -39,6 +39,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bef38d45163c2f1dde094a7dfd33ccf595c92905c8f8f4fdc18d06fb1037718a"
 
 [[package]]
+name = "bxcan"
+version = "0.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4b13b4b2ea9ab2ba924063ebb86ad895cb79f4a79bf90f27949eb20c335b30f9"
+dependencies = [
+ "bitflags",
+ "defmt",
+ "nb 1.1.0",
+ "vcell",
+]
+
+[[package]]
 name = "byteorder"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -203,6 +215,8 @@ dependencies = [
 name = "front-vehicle-controller"
 version = "0.1.0"
 dependencies = [
+ "bitflags",
+ "bxcan",
  "byteorder",
  "cortex-m",
  "cortex-m-rt",
@@ -211,6 +225,7 @@ dependencies = [
  "defmt-rtt",
  "embedded-hal 0.2.7",
  "fdcan",
+ "j1939",
  "panic-probe",
  "rtic",
  "rtic-monotonics",
@@ -271,6 +286,14 @@ checksum = "168fb715dda47215e360912c096649d23d58bf392ac62f73919e831745e40f26"
 dependencies = [
  "equivalent",
  "hashbrown",
+]
+
+[[package]]
+name = "j1939"
+version = "0.1.1"
+source = "git+https://github.com/team-arrow-racing/sae-j1939-rs#2bde0d0e63c55e79918fa39a9cec64a749bc3f82"
+dependencies = [
+ "bxcan",
 ]
 
 [[package]]

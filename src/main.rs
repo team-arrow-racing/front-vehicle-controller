@@ -37,6 +37,8 @@ use rtic_monotonics::{systick::*, Monotonic};
 
 #[rtic::app(device = stm32g4xx_hal::stm32g4::stm32g431, dispatchers = [USART1, USART2])]
 mod app {
+    use fdcan::frame::TxFrameHeader;
+
     use super::*;
     type FdCanMode = NormalOperationMode;
 
@@ -73,6 +75,23 @@ mod app {
             cx.local.watchdog.feed();
             Systick::delay(80_u64.millis()).await;
         }
+    }
+
+    #[task(local = [led_error])]
+    async fn trigger_led_error(mut cx: trigger_led_error::Context){
+        cx.local.led_error.set_high().unwrap();
+    }
+
+    #[task(local = [led_warn])]
+    async fn trigger_led_warn(mut cx: trigger_led_warn::Context){
+        cx.local.led_warn.set_high().unwrap();
+    }
+
+    #[task(shared = [fdcan1_tx])]
+    async fn send_can_frame(mut cx: send_can_frame::Context, frame: TxFrameHeader, buffer: &[u8]){
+        cx.shared.fdcan1_tx.lock(|can_tx|{
+            can_tx.transmit(frame, buffer).unwrap();
+        });
     }
 
     extern "Rust" {

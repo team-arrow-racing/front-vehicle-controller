@@ -1,13 +1,13 @@
 use crate::app::*;
-use crate::horn::{HornMessageFormat, PGN_HORN_MESSAGE};
+use crate::horn::PGN_HORN_MESSAGE;
 use crate::lighting::{LampsState, PGN_LIGHTING_STATE};
 
 use fdcan::{frame::RxFrameInfo, id::Id};
 use rtic::Mutex;
 use stm32g4xx_hal::nb::block;
-use j1939::pgn::{Number, Pgn};
+use j1939::pgn::Number;
 
-pub fn pgn_from_rawid(rawid: u32) -> Number {
+fn pgn_from_rawid(rawid: u32) -> Number {
     //Isolates bit 9-18 for the pgn
     let raw_pgn = (rawid >> 9) & 0x3FFFF; 
 
@@ -66,9 +66,42 @@ pub async fn can_receive(mut cx: can_receive::Context<'_>, frame: RxFrameInfo, b
                 },
                 PGN_LIGHTING_STATE => {
                     defmt::info!("Received Lighting Message");
+                    let lamp_state = LampsState::from_bits(buffer[0]).unwrap_or_else(LampsState::empty);
+
+                    if lamp_state.contains(LampsState::DAYTIME){
+                        defmt::info!("Daytime: ON");
+                    } else{
+                        defmt::info!("Daytime: OFF");
+                    }
+
+                    if lamp_state.contains(LampsState::STOP){
+                        defmt::info!("Stop: ON");
+                    } else{
+                        defmt::info!("Stop: OFF");
+                    }
+
+                    if lamp_state.contains(LampsState::INDICATOR_LEFT){
+                        defmt::info!("Left Indicator: ON");
+                    } else{
+                        defmt::info!("Left Indicator: OFF");
+                    }
+
+                    if lamp_state.contains(LampsState::INDICATOR_RIGHT){
+                        defmt::info!("Right Indicator: ON");
+                    } else{
+                        defmt::info!("Right Indicator: OFF");
+                    }
+
+                    if lamp_state.contains(LampsState::HAZARD){
+                        defmt::info!("Hazards: ON");
+                    } else{
+                        defmt::info!("Hazards: OFF")
+                    }
+
                 },
                 _ => {
                     defmt::info!("Received Unknown Message");
+                    trigger_led_error::spawn().unwrap();
                 }
                 
             }

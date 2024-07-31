@@ -1,6 +1,6 @@
 use crate::comms::Priority;
 use crate::device::{source_address, Device};
-use crate::app::send_can_frame;
+use crate::app::{send_can_frame, trigger_led_error, trigger_led_warn};
 // use bxcan::{ExtendedId, Frame};
 use fdcan::{frame::{TxFrameHeader, FrameFormat}, id::{Id, ExtendedId}};
 use j1939::pgn::{Number, Pgn};
@@ -32,6 +32,10 @@ pub fn horn_message(device: Device, state: u8){
         marker: None
     };
     
-    //Ignore Result<> for now
+    //Return tuple for transmission
     let _ = send_can_frame::spawn(header, &[state]);
+}
+
+pub fn horn_test(){
+    horn_message(Device::VehicleController, 1);
 }

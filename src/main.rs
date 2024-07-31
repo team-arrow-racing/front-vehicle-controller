@@ -18,7 +18,17 @@ use defmt_rtt as _;
 use panic_probe as _;
 use stm32g4xx_hal as hal;
 
-use fdcan::{frame::RxFrameInfo, FdCanControl, Fifo0, Fifo1, NormalOperationMode, Rx, Tx};
+use fdcan::{
+    frame::RxFrameInfo, 
+    FdCanControl, 
+    Fifo0, 
+    Fifo1, 
+    NormalOperationMode, 
+    Rx, 
+    Tx, 
+    id::StandardId, 
+    frame::FrameFormat};
+
 use hal::{
     can::Can,
     gpio::{
@@ -29,7 +39,8 @@ use hal::{
 		PushPull
     },
     independent_watchdog::IndependentWatchdog,
-    stm32
+    stm32,
+    nb::block,
 };
 use hal::prelude::*;
 
@@ -37,10 +48,16 @@ use rtic_monotonics::{systick::*, Monotonic};
 
 #[rtic::app(device = stm32g4xx_hal::stm32g4::stm32g431, dispatchers = [USART1, USART2])]
 mod app {
-    use fdcan::frame::TxFrameHeader;
+    use fdcan::{
+        frame::TxFrameHeader, 
+        interrupt, 
+        ExternalLoopbackMode, 
+        InternalLoopbackMode, 
+        NormalOperationMode, 
+        ReceiveOverrun};
 
     use super::*;
-    type FdCanMode = NormalOperationMode;
+    type FdCanMode = NormalOperationMode; //InternalLoopbackMode
 
     pub struct Lights {
         pub left_indicator: u8,
@@ -77,6 +94,16 @@ mod app {
         }
     }
 
+    #[task(local = [led_ok])]
+    async fn heartbeat(mut cx: heartbeat::Context){
+        loop {
+        cx.local.led_ok.set_high().unwrap();
+        Systick::delay(500.millis()).await;
+        cx.local.led_ok.set_low().unwrap();
+        Systick::delay(500.millis()).await;
+        }
+    }
+
     #[task(local = [led_error])]
     async fn trigger_led_error(mut cx: trigger_led_error::Context){
         cx.local.led_error.set_high().unwrap();
@@ -90,8 +117,39 @@ mod app {
     #[task(shared = [fdcan1_tx])]
     async fn send_can_frame(mut cx: send_can_frame::Context, frame: TxFrameHeader, buffer: &[u8]){
         cx.shared.fdcan1_tx.lock(|can_tx|{
-            can_tx.transmit(frame, buffer).unwrap();
+            block!(can_tx.transmit(frame, buffer)).unwrap();
         });
+        defmt::info!("can frame sent!");
+    }
+
+    #[task(shared = [fdcan1_tx, fdcan1_rx1])]
+    async fn can_echo_test(mut cx: can_echo_test::Context){
+        cx.shared.fdcan1_tx.lock(|tx| {
+            cx.shared.fdcan1_rx1.lock(|rx1|{
+                let mut buffer: [u8; 8] = [0xAA, 0xAA, 0xAA, 0xAA, 0xFF, 0xFF, 0xFF, 0xFF];
+
+                let header = TxFrameHeader {
+                    len: 2 * 4,
+                    id: StandardId::new(0x1).unwrap().into(),
+                    frame_format: FrameFormat::Standard,
+                    bit_rate_switching: false,
+                    marker: None,
+                };
+            
+                defmt::info!("Transmit initial message");
+                block!(tx.transmit(header, &buffer)).unwrap();
+            
+                for _i in 0..5 {
+                    defmt::info!("Loop");
+                    if let Ok(rxheader) = rx1.receive(&mut buffer){
+                        defmt::info!("You've made it!");
+                        tx.transmit(rxheader.unwrap().to_tx_header(None), &buffer).unwrap();
+                    }
+
+                };
+            })
+        });
+        
     }
 
     extern "Rust" {

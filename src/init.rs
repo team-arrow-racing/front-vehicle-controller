@@ -1,4 +1,4 @@
-use crate::app::{init, watchdog, Local, Shared, Lights};
+use crate::{app::{can_receive, heartbeat, init, trigger_led_error, trigger_led_warn, watchdog, Lights, Local, Shared, can_echo_test}, horn::horn_test, lighting::{lighting_message, lighting_test}};
 
 use embedded_hal::digital::v2::OutputPin;
 use stm32g4xx_hal as hal;
@@ -9,7 +9,8 @@ use hal::{
 	independent_watchdog::IndependentWatchdog,
 	pwr::PwrExt,
 	rcc::{self, Config, RccExt, SysClockSrc},
-	time::{ExtU32, RateExtU32}
+	time::{ExtU32, RateExtU32},
+    nb::block
 };
 
 use fdcan::{
@@ -17,6 +18,7 @@ use fdcan::{
     filter::{StandardFilter, StandardFilterSlot},
     frame::{FrameFormat, TxFrameHeader},
     id::StandardId,
+    interrupt::*,
 };
 
 use core::num::{NonZeroU16, NonZeroU8};
@@ -66,7 +68,7 @@ pub fn init(cx: init::Context) -> (Shared, Local) {
         sync_jump_width: NonZeroU8::new(1).unwrap(),
     };
 
-    let (fdcan1_ctrl, fdcan1_tx, fdcan1_rx0, fdcan1_rx1) = {
+    let (fdcan1_ctrl, mut fdcan1_tx, mut fdcan1_rx0, fdcan1_rx1) = {
         let rx = gpiob.pb8.into_alternate().set_speed(Speed::VeryHigh);
         let tx = gpiob.pb9.into_alternate().set_speed(Speed::VeryHigh);
 
@@ -80,7 +82,12 @@ pub fn init(cx: init::Context) -> (Shared, Local) {
             StandardFilter::accept_all_into_fifo0(),
         );
 
-        can.into_normal().split()
+        can.enable_interrupt_line(InterruptLine::_0, true);
+        can.enable_interrupt_line(InterruptLine::_1, true);
+        can.enable_interrupts(Interrupts::RX_FIFO0_NEW_MSG | Interrupts::RX_FIFO1_NEW_MSG);
+
+
+        can.into_normal().split() //.into_internal_loopback.split() <- Neither mode works
     };
 
     // Light outputs
@@ -106,9 +113,9 @@ pub fn init(cx: init::Context) -> (Shared, Local) {
     );
 
     watchdog::spawn().ok();
-
-    defmt::info!("Initialisation finished.");
-
+    heartbeat::spawn().ok();
+    //horn_test();
+    can_echo_test::spawn().ok();
     (
         Shared {
             fdcan1_ctrl,

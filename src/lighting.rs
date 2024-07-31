@@ -2,6 +2,7 @@ use crate::app::send_can_frame;
 use crate::comms::{MessageFormat, Priority};
 use crate::device::{source_address, Device};
 use bitflags::bitflags;
+use fdcan::{Receive, Rx};
 use fdcan::{frame::{TxFrameHeader, FrameFormat}, id::{Id, ExtendedId}};
 use j1939::pgn::{Number, Pgn};
 
@@ -40,7 +41,7 @@ pub fn lighting_message(device: Device, lamp: LampsState){
 
     //Construct header
     let header = TxFrameHeader {
-        len: 2,
+        len: 1,
         frame_format: FrameFormat::Fdcan,
         id: Id::Extended(ExtendedId::new(j1939id.to_bits()).unwrap()),
         bit_rate_switching: true,
@@ -57,9 +58,9 @@ pub fn lighting_test(){
     lighting_message(Device::VehicleController, LampsState::empty());
 
     //Iterate through all lighting flags
-    let mut bits: u8 = 0b00000001;
+    let mut bits: u8 = 1;
     for _i in 0..4{
        lighting_message(Device::VehicleController, LampsState{bits});
-       bits = bits << 1;
+       bits <<= 1;
     }
 }

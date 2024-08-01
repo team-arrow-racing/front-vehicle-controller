@@ -2,7 +2,7 @@ use crate::app::*;
 use crate::horn::PGN_HORN_MESSAGE;
 use crate::lighting::{LampsState, PGN_LIGHTING_STATE};
 
-use fdcan::{frame::RxFrameInfo, id::Id};
+use fdcan::{frame::RxFrameInfo, id::Id, interrupt::Interrupt};
 use rtic::Mutex;
 use stm32g4xx_hal::nb::block;
 use j1939::pgn::Number;
@@ -27,24 +27,44 @@ fn pgn_from_rawid(rawid: u32) -> Number {
 
 pub fn can_rx0_pending(mut cx: can_rx0_pending::Context) {
     defmt::trace!("RX0 received");
-    cx.shared.fdcan1_rx0.lock(|rx| {
+    cx.shared.can.lock(|can| {
         let mut buffer = [0_u8; 8];
-        let rxframe = block!(rx.receive(&mut buffer));
+        if can.has_interrupt(Interrupt::RxFifo0NewMsg) {
+            match can.receive0(&mut buffer) {
+                Ok(rxframe) => {
+                    defmt::trace!("frame received");
+                    can_receive::spawn(rxframe.unwrap(), buffer).ok()
+                },
+                Err(_) => {
+                    defmt::trace!("Error");
+                    Some(())
+                }
+            };
 
-        if let Ok(rxframe) = rxframe {
-            can_receive::spawn(rxframe.unwrap(), buffer).ok();
+            can.clear_interrupt(Interrupt::RxFifo0NewMsg);
         }
     });
 }
 
 pub fn can_rx1_pending(mut cx: can_rx1_pending::Context) {
     defmt::trace!("RX1 received");
-    cx.shared.fdcan1_rx1.lock(|rx| {
+    cx.shared.can.lock(|can| {
         let mut buffer = [0_u8; 8];
-        let rxframe = block!(rx.receive(&mut buffer));
 
-        if let Ok(rxframe) = rxframe {
-            can_receive::spawn(rxframe.unwrap(), buffer).ok();
+        if can.has_interrupt(Interrupt::RxFifo1NewMsg) {
+            defmt::trace!("int triggered");
+            match can.receive1(&mut buffer) {
+                Ok(rxframe) => {
+                    defmt::trace!("frame received");
+                    can_receive::spawn(rxframe.unwrap(), buffer).ok()
+                },
+                Err(_) => {
+                    defmt::trace!("Error");
+                    Some(())
+                }
+            };
+
+            can.clear_interrupt(Interrupt::RxFifo1NewMsg);
         }
     });
 }

@@ -20,14 +20,13 @@ use stm32g4xx_hal as hal;
 
 use fdcan::{
     frame::RxFrameInfo, 
-    FdCanControl, 
-    Fifo0, 
-    Fifo1, 
+    ExternalLoopbackMode,
+    FdCan,
     NormalOperationMode, 
-    Rx, 
-    Tx, 
+    frame::TxFrameHeader,
     id::StandardId, 
-    frame::FrameFormat};
+    frame::FrameFormat,
+};
 
 use hal::{
     can::Can,
@@ -35,29 +34,20 @@ use hal::{
         gpioa::{PA1, PA2, PA3, PA4, PA5, PA15},
         gpiob::{PB0, PB1, PB2, PB3, PB14, PB7},
         Output,
-        GpioExt,
 		PushPull
     },
     independent_watchdog::IndependentWatchdog,
-    stm32,
+    stm32::FDCAN1,
     nb::block,
 };
 use hal::prelude::*;
 
 use rtic_monotonics::{systick::*, Monotonic};
 
-#[rtic::app(device = stm32g4xx_hal::stm32g4::stm32g431, dispatchers = [USART1, USART2])]
+#[rtic::app(device = stm32g4xx_hal::stm32g4::stm32g431, dispatchers = [USART1, USART2, SPI1])]
 mod app {
-    use fdcan::{
-        frame::TxFrameHeader, 
-        interrupt, 
-        ExternalLoopbackMode, 
-        InternalLoopbackMode, 
-        NormalOperationMode, 
-        ReceiveOverrun};
-
     use super::*;
-    type FdCanMode = NormalOperationMode; //InternalLoopbackMode
+    type FdCanMode = ExternalLoopbackMode; //InternalLoopbackMode
 
     pub struct Lights {
         pub left_indicator: u8,
@@ -67,10 +57,7 @@ mod app {
 
     #[shared]
     pub struct Shared {
-        pub fdcan1_ctrl: FdCanControl<Can<stm32::FDCAN1>, FdCanMode>,
-        pub fdcan1_tx: Tx<Can<stm32::FDCAN1>, FdCanMode>,
-        pub fdcan1_rx0: Rx<Can<stm32::FDCAN1>, FdCanMode, Fifo0>,
-        pub fdcan1_rx1: Rx<Can<stm32::FDCAN1>, FdCanMode, Fifo1>,
+        pub can: FdCan<Can<FDCAN1>, ExternalLoopbackMode>,
         pub light_states: Lights,
         pub horn: PA15<Output<PushPull>>
     }
@@ -97,10 +84,10 @@ mod app {
     #[task(local = [led_ok])]
     async fn heartbeat(mut cx: heartbeat::Context){
         loop {
-        cx.local.led_ok.set_high().unwrap();
-        Systick::delay(500.millis()).await;
-        cx.local.led_ok.set_low().unwrap();
-        Systick::delay(500.millis()).await;
+            cx.local.led_ok.set_high().unwrap();
+            Systick::delay(500.millis()).await;
+            cx.local.led_ok.set_low().unwrap();
+            Systick::delay(500.millis()).await;
         }
     }
 
@@ -114,19 +101,11 @@ mod app {
         cx.local.led_warn.set_high().unwrap();
     }
 
-    #[task(shared = [fdcan1_tx])]
-    async fn send_can_frame(mut cx: send_can_frame::Context, frame: TxFrameHeader, buffer: &[u8]){
-        cx.shared.fdcan1_tx.lock(|can_tx|{
-            block!(can_tx.transmit(frame, buffer)).unwrap();
-        });
-        defmt::info!("can frame sent!");
-    }
-
-    #[task(shared = [fdcan1_tx, fdcan1_rx1])]
+    #[task(shared = [can])]
     async fn can_echo_test(mut cx: can_echo_test::Context){
-        cx.shared.fdcan1_tx.lock(|tx| {
-            cx.shared.fdcan1_rx1.lock(|rx1|{
-                let mut buffer: [u8; 8] = [0xAA, 0xAA, 0xAA, 0xAA, 0xFF, 0xFF, 0xFF, 0xFF];
+        loop {
+            cx.shared.can.lock(|tx| {
+                let buffer: [u8; 8] = [0xAA, 0xAA, 0xAA, 0xAA, 0xFF, 0xFF, 0xFF, 0xFF];
 
                 let header = TxFrameHeader {
                     len: 2 * 4,
@@ -138,28 +117,19 @@ mod app {
             
                 defmt::info!("Transmit initial message");
                 block!(tx.transmit(header, &buffer)).unwrap();
-            
-                for _i in 0..5 {
-                    defmt::info!("Loop");
-                    if let Ok(rxheader) = rx1.receive(&mut buffer){
-                        defmt::info!("You've made it!");
-                        tx.transmit(rxheader.unwrap().to_tx_header(None), &buffer).unwrap();
-                    }
-
-                };
-            })
-        });
-        
+            });
+            Systick::delay(1000.millis()).await;
+        }    
     }
 
     extern "Rust" {
         #[init]
         fn init(mut cx: init::Context) -> (Shared, Local);
-
-        #[task(binds = FDCAN1_INTR0_IT, priority = 2, shared = [fdcan1_rx0])]
+        // NOTE: These binds are swapped on purpose due to an error on the G4 SVD file
+        #[task(binds = FDCAN1_INTR1_IT, priority = 2, shared = [can])]
         fn can_rx0_pending(mut cx: can_rx0_pending::Context);
 
-        #[task(binds = FDCAN1_INTR1_IT, priority = 2, shared = [fdcan1_rx1])]
+        #[task(binds = FDCAN1_INTR0_IT, priority = 2, shared = [can])]
         fn can_rx1_pending(mut cx: can_rx1_pending::Context);
 
         #[task(priority = 1)]

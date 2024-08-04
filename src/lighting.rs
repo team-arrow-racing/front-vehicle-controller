@@ -29,7 +29,7 @@ pub const PGN_LIGHTING_STATE: Number = Number {
     extended_data_page: false,
 };
 
-pub fn lighting_header(device: Device, lamp: LampsState) -> TxFrameHeader {
+pub fn lighting_header(device: Device) -> TxFrameHeader {
     //Construct id
     let j1939id = j1939::ExtendedId{
         priority: Priority::Default as u8,

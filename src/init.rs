@@ -1,11 +1,13 @@
 use crate::app::{
-        heartbeat,
-        init,
-        watchdog,
-        Lights,
-        Local,
-        Shared,
-        can_echo_test
+            can_echo_test,
+            heartbeat, 
+            init, 
+            lighting_test, 
+            watchdog, 
+            Lights, 
+            Local, 
+            Shared,
+            horn_test
 };
 
 use embedded_hal::digital::v2::OutputPin;
@@ -114,7 +116,8 @@ pub fn init(cx: init::Context) -> (Shared, Local) {
 
     watchdog::spawn().ok();
     heartbeat::spawn().ok();
-    can_echo_test::spawn().ok();
+    horn_test::spawn().ok();
+    lighting_test::spawn().ok(); //can_echo_test::spawn().ok();
     (
         Shared {
             can,

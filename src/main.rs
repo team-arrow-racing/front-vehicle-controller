@@ -13,6 +13,11 @@ mod device;
 use canbus::*;
 use init::*;
 
+//TESTING ONLY
+use lighting::*;
+use horn::*;
+use device::Device;
+
 // global logger
 use defmt_rtt as _;
 use panic_probe as _;
@@ -120,6 +125,34 @@ mod app {
             });
             Systick::delay(1000.millis()).await;
         }    
+    }
+
+    #[task(shared = [can])]
+    async fn lighting_test(mut cx: lighting_test::Context){
+
+        let mut raw_lamp_state = 1;
+        let header = lighting_header(Device::VehicleController);
+
+        for _ in 0..4{
+            cx.shared.can.lock(|tx|{
+                block!(tx.transmit(header, &[raw_lamp_state])).unwrap();
+            });
+
+            raw_lamp_state <<= 1;
+
+            Systick::delay(500.millis()).await;
+        }
+
+    }
+
+    #[task(shared = [can])]
+    async fn horn_test(mut cx: horn_test::Context){
+
+        let header = horn_header(Device::VehicleController);
+
+        cx.shared.can.lock(|tx|{
+            block!(tx.transmit(header, &[1])).unwrap();;
+        })
     }
 
     extern "Rust" {

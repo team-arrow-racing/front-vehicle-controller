@@ -9,7 +9,7 @@ use j1939::pgn::Number;
 
 fn pgn_from_rawid(rawid: u32) -> Number {
     //Isolates bit 9-18 for the pgn
-    let raw_pgn = (rawid >> 9) & 0x3FFFF; 
+    let raw_pgn = (rawid & 0x00FF0000) >> 8;
 
     //Split the PGN bitwise into sections
     let specific = (raw_pgn & 0xFF) as u8;
@@ -73,10 +73,10 @@ pub async fn can_receive(mut cx: can_receive::Context<'_>, frame: RxFrameInfo, b
     let id = frame.id;
     match id {
         Id::Standard(id) => {
-            defmt::info!("Received Header: {:#02x}", id.as_raw());
+            defmt::info!("Received Standard Header: {:#02x}", id.as_raw());
         },
         Id::Extended(id) => {
-            defmt::info!("Received Header: {:#03x}", id.as_raw());
+            defmt::info!("Received Extended Header: {:#03x}", id.as_raw());
 
             let pgn = pgn_from_rawid(id.as_raw());
 
@@ -121,7 +121,7 @@ pub async fn can_receive(mut cx: can_receive::Context<'_>, frame: RxFrameInfo, b
                 },
                 _ => {
                     defmt::info!("Received Unknown Message");
-                    trigger_led_error::spawn().unwrap();
+                    trigger_led_error::spawn().ok();
                 }
                 
             }

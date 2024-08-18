@@ -13,7 +13,7 @@ mod device;
 use canbus::*;
 use init::*;
 
-//TESTING ONLY
+//debug only
 use lighting::*;
 use horn::*;
 use device::Device;
@@ -38,6 +38,8 @@ use hal::{
     gpio::{
         gpioa::{PA1, PA2, PA3, PA4, PA5, PA15},
         gpiob::{PB0, PB1, PB2, PB3, PB14, PB7},
+        gpioc::{PC13},
+        Input,
         Output,
 		PushPull
     },
@@ -51,6 +53,10 @@ use rtic_monotonics::{systick::*, Monotonic};
 
 #[rtic::app(device = stm32g4xx_hal::stm32g4::stm32g431, dispatchers = [USART1, USART2, SPI1])]
 mod app {
+    use core::task::Context;
+
+    use stm32g4xx_hal::gpio::PullDown;
+
     use super::*;
     type FdCanMode = ExternalLoopbackMode; //InternalLoopbackMode
 
@@ -64,7 +70,7 @@ mod app {
     pub struct Shared {
         pub can: FdCan<Can<FDCAN1>, ExternalLoopbackMode>,
         pub light_states: Lights,
-        pub horn: PA15<Output<PushPull>>
+        pub horn_trigger: PC13<Input<PullDown>>
     }
 
     #[local]
@@ -75,7 +81,8 @@ mod app {
         pub led_error: PB14<Output<PushPull>>,
         pub left_indicator_output: PA4<Output<PushPull>>,
         pub right_indicator_output: PA5<Output<PushPull>>,
-        pub day_light_output: PB3<Output<PushPull>>
+        pub day_light_output: PB3<Output<PushPull>>,
+        pub horn: PA15<Output<PushPull>>
     }
 
     #[task(local = [watchdog])]
@@ -104,6 +111,40 @@ mod app {
     #[task(local = [led_warn])]
     async fn trigger_led_warn(mut cx: trigger_led_warn::Context){
         cx.local.led_warn.set_high().unwrap();
+    }
+
+    #[task(local = [horn])]
+    async fn set_horn(mut cx: set_horn::Context, state:u8){
+        cx.local.horn.set_state(PinState::from(state > 0)).unwrap();
+    }
+
+    // //debug task: emulates can horn messages from the driver controller - driver input should not be handled here!
+    // #[task(shared = [can, horn_trigger])]
+    // async fn send_horn_from_button(mut cx: send_horn_from_button::Context){
+    //     let header = horn_header(Device::VehicleController);
+    //     loop{
+    //          cx.shared.horn_trigger.lock(|button|{
+    //             cx.shared.can.lock(|tx|{
+    //                 block!(tx.transmit(header, &[button.is_high().unwrap() as u8])).unwrap();
+    //             })
+    //         });
+    //         Systick::delay(10.millis()).await;
+    //     }
+    // }
+
+    //debug task: emulates can lighting messages from the driver controller - driver input should not be handled here!
+    #[task(shared = [can, horn_trigger])]
+    async fn send_light_from_button(mut cx: send_light_from_button::Context){
+        let header = lighting_header(Device::VehicleController);
+        
+        loop{
+            cx.shared.horn_trigger.lock(|button|{
+                cx.shared.can.lock(|tx|{
+                    block!(tx.transmit(header, &[button.is_high().unwrap() as u8])).unwrap();
+                })
+            });
+            Systick::delay(10.millis()).await;
+        }
     }
 
     #[task(shared = [can])]
@@ -145,16 +186,6 @@ mod app {
 
     }
 
-    #[task(shared = [can])]
-    async fn horn_test(mut cx: horn_test::Context){
-
-        let header = horn_header(Device::VehicleController);
-
-        cx.shared.can.lock(|tx|{
-            block!(tx.transmit(header, &[1])).unwrap();;
-        })
-    }
-
     extern "Rust" {
         #[init]
         fn init(mut cx: init::Context) -> (Shared, Local);
@@ -167,6 +198,9 @@ mod app {
 
         #[task(priority = 1)]
         async fn can_receive(mut cx: can_receive::Context, frame: RxFrameInfo, buffer: [u8; 8]);
+
+        #[task(shared = [light_states])]
+        async fn update_light_states(mut cx: update_light_states::Context, state: LampsState);
     }
 
     #[task(priority = 1, shared = [light_states], local = [left_indicator_output])]
@@ -175,7 +209,7 @@ mod app {
         let time = Systick::now();
         let on: bool = (time.duration_since_epoch().to_millis() % 1000) > 500;
 
-        // States are toggled from CAN
+        //read state and set output
         cx.shared.light_states.lock(|ls| {
             let _ = left_ind.set_state(PinState::from(on && ls.left_indicator > 0));
         });
@@ -187,7 +221,7 @@ mod app {
         let time = Systick::now();
         let on: bool = (time.duration_since_epoch().to_millis() % 1000) > 500;
 
-        // States are toggled from CAN
+        //read state and set output
         cx.shared.light_states.lock(|ls| {
             let _ = right_ind.set_state(PinState::from(on && ls.right_indicator > 0));
         });

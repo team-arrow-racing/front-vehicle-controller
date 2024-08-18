@@ -1,13 +1,11 @@
 use crate::app::{
-            can_echo_test,
             heartbeat, 
             init, 
-            lighting_test, 
             watchdog, 
             Lights, 
             Local, 
-            Shared,
-            horn_test
+            Shared, 
+            send_light_from_button
 };
 
 use embedded_hal::digital::v2::OutputPin;
@@ -60,6 +58,7 @@ pub fn init(cx: init::Context) -> (Shared, Local) {
     // GPIO
     let gpioa = cx.device.GPIOA.split(&mut rcc);
     let gpiob = cx.device.GPIOB.split(&mut rcc);
+    let gpioc = cx.device.GPIOC.split(&mut rcc);
     let gpiod = cx.device.GPIOD.split(&mut rcc);
 
     // Status LEDs
@@ -87,8 +86,7 @@ pub fn init(cx: init::Context) -> (Shared, Local) {
         can.enable_interrupt_line(InterruptLine::_1, true);
         can.enable_interrupts(Interrupts::RX_FIFO0_NEW_MSG | Interrupts::RX_FIFO1_NEW_MSG);
 
-
-        // can.into_normal().split() //.into_internal_loopback.split() <- Neither mode works
+        //debug mode only
         can.into_external_loopback()
     };
 
@@ -106,6 +104,7 @@ pub fn init(cx: init::Context) -> (Shared, Local) {
 
     // Horn
     let horn = gpioa.pa15.into_push_pull_output();
+    let horn_trigger = gpioc.pc13.into_pull_down_input(); //debug input only
 
     // Monotonics
     Systick::start(
@@ -116,13 +115,13 @@ pub fn init(cx: init::Context) -> (Shared, Local) {
 
     watchdog::spawn().ok();
     heartbeat::spawn().ok();
-    horn_test::spawn().ok();
-    lighting_test::spawn().ok(); //can_echo_test::spawn().ok();
+    send_light_from_button::spawn().ok();
+    
     (
         Shared {
             can,
             light_states,
-            horn
+            horn_trigger
         },
         Local {
             watchdog,
@@ -131,7 +130,8 @@ pub fn init(cx: init::Context) -> (Shared, Local) {
             led_error,
             left_indicator_output,
             right_indicator_output,
-            day_light_output
+            day_light_output,
+            horn
         },
     )		
 }	

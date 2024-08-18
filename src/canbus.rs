@@ -1,10 +1,11 @@
 use crate::app::*;
+
+//TODO: migrate to solar-car-common crate
 use crate::horn::PGN_HORN_MESSAGE;
 use crate::lighting::{LampsState, PGN_LIGHTING_STATE};
 
 use fdcan::{frame::RxFrameInfo, id::Id, interrupt::Interrupt};
 use rtic::Mutex;
-use stm32g4xx_hal::nb::block;
 use j1939::pgn::Number;
 
 fn pgn_from_rawid(rawid: u32) -> Number {
@@ -23,6 +24,15 @@ fn pgn_from_rawid(rawid: u32) -> Number {
         data_page,
         extended_data_page,
     }
+}
+
+pub async fn update_light_states(mut cx: update_light_states::Context<'_>, state: LampsState){
+    //update states from CAN lighting frame
+    cx.shared.light_states.lock(|ls|{
+        ls.day_light = state.contains(LampsState::DAYTIME) as u8;
+        ls.left_indicator = state.contains(LampsState::INDICATOR_LEFT) as u8;
+        ls.right_indicator = state.contains(LampsState::INDICATOR_RIGHT) as u8;
+    });
 }
 
 pub fn can_rx0_pending(mut cx: can_rx0_pending::Context) {
@@ -76,47 +86,23 @@ pub async fn can_receive(mut cx: can_receive::Context<'_>, frame: RxFrameInfo, b
             defmt::info!("Received Standard Header: {:#02x}", id.as_raw());
         },
         Id::Extended(id) => {
-            defmt::info!("Received Extended Header: {:#03x}", id.as_raw());
 
             let pgn = pgn_from_rawid(id.as_raw());
 
             match pgn {
                 PGN_HORN_MESSAGE => {
-                    defmt::info!("Received Horn Message");
+                    set_horn::spawn(buffer[0]).ok();
                 },
                 PGN_LIGHTING_STATE => {
-                    defmt::info!("Received Lighting Message");
                     let lamp_state = LampsState::from_bits(buffer[0]).unwrap_or_else(LampsState::empty);
+                
+                    //update stored lamp states directly from CAN for every frame
+                    update_light_states::spawn(lamp_state).ok();
 
-                    if lamp_state.contains(LampsState::DAYTIME){
-                        defmt::info!("Daytime: ON");
-                    } else{
-                        defmt::info!("Daytime: OFF");
-                    }
-
-                    if lamp_state.contains(LampsState::STOP){
-                        defmt::info!("Stop: ON");
-                    } else{
-                        defmt::info!("Stop: OFF");
-                    }
-
-                    if lamp_state.contains(LampsState::INDICATOR_LEFT){
-                        defmt::info!("Left Indicator: ON");
-                    } else{
-                        defmt::info!("Left Indicator: OFF");
-                    }
-
-                    if lamp_state.contains(LampsState::INDICATOR_RIGHT){
-                        defmt::info!("Right Indicator: ON");
-                    } else{
-                        defmt::info!("Right Indicator: OFF");
-                    }
-
-                    if lamp_state.contains(LampsState::HAZARD){
-                        defmt::info!("Hazards: ON");
-                    } else{
-                        defmt::info!("Hazards: OFF")
-                    }
+                    //update light states whenever lighting message is received
+                    toggle_day_lights::spawn().ok();
+                    toggle_left_indicator::spawn().ok();
+                    toggle_right_indicator::spawn().ok();
 
                 },
                 _ => {
@@ -127,5 +113,4 @@ pub async fn can_receive(mut cx: can_receive::Context<'_>, frame: RxFrameInfo, b
             }
         }
     }
-    defmt::info!("received data: {:#02x}", buffer);
 }

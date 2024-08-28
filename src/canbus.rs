@@ -1,8 +1,7 @@
 use crate::app::*;
 
-//TODO: migrate to solar-car-common crate
-use crate::horn::PGN_HORN_MESSAGE;
-use crate::lighting::{LampsState, PGN_LIGHTING_STATE};
+use solar_car::com::horn::PGN_HORN_MESSAGE;
+use solar_car::com::lighting::{LampsState, PGN_LIGHTING_STATE};
 
 use fdcan::{frame::RxFrameInfo, id::Id, interrupt::Interrupt};
 use rtic::Mutex;

@@ -4,19 +4,12 @@
 
 mod canbus;
 mod init;
-mod lighting;
-mod horn;
-mod comms;
-mod device;
-
 
 use canbus::*;
 use init::*;
 
-//debug only
-use lighting::*;
-use horn::*;
-use device::Device;
+use solar_car::com::{lighting::{lighting_header, LampsState}, horn::horn_header};
+use solar_car::device::Device;
 
 // global logger
 use defmt_rtt as _;
@@ -54,6 +47,8 @@ use rtic_monotonics::{systick::*, Monotonic};
 #[rtic::app(device = stm32g4xx_hal::stm32g4::stm32g431, dispatchers = [USART1, USART2, SPI1])]
 mod app {
     use core::task::Context;
+    
+
 
     use stm32g4xx_hal::gpio::PullDown;
 
@@ -118,72 +113,25 @@ mod app {
         cx.local.horn.set_state(PinState::from(state > 0)).unwrap();
     }
 
-    // //debug task: emulates can horn messages from the driver controller - driver input should not be handled here!
-    // #[task(shared = [can, horn_trigger])]
-    // async fn send_horn_from_button(mut cx: send_horn_from_button::Context){
-    //     let header = horn_header(Device::VehicleController);
-    //     loop{
-    //          cx.shared.horn_trigger.lock(|button|{
-    //             cx.shared.can.lock(|tx|{
-    //                 block!(tx.transmit(header, &[button.is_high().unwrap() as u8])).unwrap();
-    //             })
-    //         });
-    //         Systick::delay(10.millis()).await;
-    //     }
-    // }
+    //debug task: emulates can horn messages from the driver controller - driver input should not be handled here!
+    #[task(shared = [can])]
+    async fn test_horn(mut cx: test_horn::Context, state: bool){
+
+        let header = horn_header(Device::VehicleController);
+
+        cx.shared.can.lock(|tx|{
+            block!(tx.transmit(header, &[state as u8])).unwrap();
+        })
+    }
 
     //debug task: emulates can lighting messages from the driver controller - driver input should not be handled here!
-    #[task(shared = [can, horn_trigger])]
-    async fn send_light_from_button(mut cx: send_light_from_button::Context){
-        let header = lighting_header(Device::VehicleController);
-        
-        loop{
-            cx.shared.horn_trigger.lock(|button|{
-                cx.shared.can.lock(|tx|{
-                    block!(tx.transmit(header, &[button.is_high().unwrap() as u8])).unwrap();
-                })
-            });
-            Systick::delay(10.millis()).await;
-        }
-    }
-
     #[task(shared = [can])]
-    async fn can_echo_test(mut cx: can_echo_test::Context){
-        loop {
-            cx.shared.can.lock(|tx| {
-                let buffer: [u8; 8] = [0xAA, 0xAA, 0xAA, 0xAA, 0xFF, 0xFF, 0xFF, 0xFF];
-
-                let header = TxFrameHeader {
-                    len: 2 * 4,
-                    id: StandardId::new(0x1).unwrap().into(),
-                    frame_format: FrameFormat::Standard,
-                    bit_rate_switching: false,
-                    marker: None,
-                };
-            
-                defmt::info!("Transmit initial message");
-                block!(tx.transmit(header, &buffer)).unwrap();
-            });
-            Systick::delay(1000.millis()).await;
-        }    
-    }
-
-    #[task(shared = [can])]
-    async fn lighting_test(mut cx: lighting_test::Context){
-
-        let mut raw_lamp_state = 1;
+    async fn test_light(mut cx: test_light::Context, state: bool){
         let header = lighting_header(Device::VehicleController);
 
-        for _ in 0..4{
-            cx.shared.can.lock(|tx|{
-                block!(tx.transmit(header, &[raw_lamp_state])).unwrap();
-            });
-
-            raw_lamp_state <<= 1;
-
-            Systick::delay(500.millis()).await;
-        }
-
+        cx.shared.can.lock(|tx|{
+            block!(tx.transmit(header, &[state as u8])).unwrap();
+        });
     }
 
     extern "Rust" {

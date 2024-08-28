@@ -4,8 +4,7 @@ use crate::app::{
             watchdog, 
             Lights, 
             Local, 
-            Shared, 
-            send_light_from_button
+            Shared
 };
 
 use embedded_hal::digital::v2::OutputPin;
@@ -115,7 +114,6 @@ pub fn init(cx: init::Context) -> (Shared, Local) {
 
     watchdog::spawn().ok();
     heartbeat::spawn().ok();
-    send_light_from_button::spawn().ok();
     
     (
         Shared {
